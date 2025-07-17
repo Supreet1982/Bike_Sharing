@@ -1,6 +1,8 @@
 library(tidyverse)
 library(car)
 library(GGally)
+library(caret)
+library(MASS)
 
 #drop features
 
@@ -169,15 +171,107 @@ vif(lm(cnt ~ temp + hum + windspeed, data = df))
 
 df$atemp <- NULL
 
+#Clustering
+
+hourly_data <-df %>%
+  group_by(hr) %>%
+  summarize(
+    avg_temp = mean(temp),
+    avg_hum = mean(hum),
+    avg_ws = mean(windspeed),
+    avg_cnt = mean(cnt)
+  )
+
+hourly_scaled <- scale(hourly_data %>% select(-hr))
+
+set.seed(123)
+
+km <- kmeans(hourly_scaled, centers = 3)
+
+hourly_data$cluster <- factor(km$cluster)
+
+hourly_data %>%
+  ggplot(aes(hr, avg_cnt, color = cluster)) +
+  geom_point(size = 3) +
+  geom_line(aes(group = cluster)) +
+  labs(title = 'Hourly Rentals clustered by Weather and Demand')
+
+df$workingday <- NULL
+
 ################################################################################
 
+set.seed(4769)
 
+partition <- createDataPartition(df$cnt, p = 0.75, list = FALSE)
+df_train <- df[partition,]
+df_test <- df[-partition,]
 
+mean(df_train$cnt)
+mean(df_test$cnt)
 
+#Fitting Poisson GLM
 
+poisson_glm <- glm(cnt ~ ., data = df_train, family = poisson(link = 'log'))
+summary(poisson_glm)
 
+#Check for overdispersion
 
+dispersion_ratio <- deviance(poisson_glm) / df.residual(poisson_glm)
+dispersion_ratio
 
+#Fitting Negative Binomial GLM
 
+nb_glm <- glm.nb(cnt ~ ., data = df_train)
+summary(nb_glm)
 
+#Predicted vs Actual plot
 
+df_test$pred_nb <- predict(nb_glm, newdata = df_test, type = 'response')
+
+df_test %>%
+  ggplot(aes(cnt, pred_nb)) +
+  geom_point(alpha=0.4) +
+  geom_abline(color='red', linetype='dashed')+
+  labs(title = 'Predicted vs Actual Rentals (NB GLM)',
+       x = 'Actual Rentals', y = 'Predicted Rentals')
+
+RMSE(df_test$pred_nb, df_test$cnt)
+
+res <- residuals(nb_glm, type = 'deviance')
+fitted_vals <- fitted(nb_glm)
+
+plot(res, main = 'Deviance Residuals', ylab = 'Residual', xlab = 'index')
+
+cooksD <- cooks.distance(nb_glm)
+plot(cooksD, type = 'h', main = "Cook's Distance", ylab = 'Distance')
+abline(h = 4 / length(cooksD), col='red', lty=2)
+
+influential <- which(cooksD > 4/length(cooksD)) 
+df_train[influential,]
+
+influential_df <- data.frame(
+  Index = 1:length(cooksD),
+  CooksDistance = cooksD
+)
+
+top10_influential <- influential_df[order(-influential_df$CooksDistance),][1:10,]
+top10_influential
+
+################################################################################
+
+nb_glm_interact <- glm.nb(cnt ~ . + hr * weekday, data = df_train)
+summary(nb_glm_interact)
+AIC(nb_glm)
+summary(nb_glm)
+
+df_test$pred_nb_int <- predict(nb_glm_interact, newdata = df_test, 
+                               type = 'response')
+
+RMSE(df_test$pred_nb_int, df_test$cnt)
+
+cooksD_int <- cooks.distance(nb_glm_interact)
+plot(cooksD_int, type = 'h', main = "Cook's Distance after interaction term", 
+     ylab = 'Distance')
+abline(h = 4 / length(cooksD_int), col='red', lty=2)
+
+################################################################################

@@ -152,6 +152,11 @@ df %>%
   labs(title = 'Bike Rentals by Season', x = 'Season', y = 'Rentals (cnt)')
 
 df %>%
+  ggplot(aes(weathersit, cnt)) +
+  geom_boxplot(fill = 'skyblue') +
+  labs(title = 'Bike Rentals by Weather', x = 'Weather', y = 'Rentals (cnt)')
+
+df %>%
   ggplot(aes(x = hum, y = cnt, color = weathersit)) +
   geom_point() +
   geom_smooth(method = 'lm', se = FALSE)
@@ -227,6 +232,7 @@ summary(nb_glm)
 #Predicted vs Actual plot
 
 df_test$pred_nb <- predict(nb_glm, newdata = df_test, type = 'response')
+df_test$pred_pois <- predict(poisson_glm, newdata = df_test, type = 'response')
 
 df_test %>%
   ggplot(aes(cnt, pred_nb)) +
@@ -235,7 +241,15 @@ df_test %>%
   labs(title = 'Predicted vs Actual Rentals (NB GLM)',
        x = 'Actual Rentals', y = 'Predicted Rentals')
 
+df_test %>%
+  ggplot(aes(cnt, pred_pois)) +
+  geom_point(alpha=0.4) +
+  geom_abline(color='red', linetype='dashed')+
+  labs(title = 'Predicted vs Actual Rentals (Poisson)',
+       x = 'Actual Rentals', y = 'Predicted Rentals')
+
 RMSE(df_test$pred_nb, df_test$cnt)
+RMSE(df_test$pred_pois, df_test$cnt)
 
 res <- residuals(nb_glm, type = 'deviance')
 fitted_vals <- fitted(nb_glm)
@@ -273,5 +287,12 @@ cooksD_int <- cooks.distance(nb_glm_interact)
 plot(cooksD_int, type = 'h', main = "Cook's Distance after interaction term", 
      ylab = 'Distance')
 abline(h = 4 / length(cooksD_int), col='red', lty=2)
+
+df_test %>%
+  ggplot(aes(cnt, pred_nb_int)) +
+  geom_point(alpha=0.4) +
+  geom_abline(color='red', linetype='dashed')+
+  labs(title = 'Predicted vs Actual Rentals (NB GLM with interaction)',
+       x = 'Actual Rentals', y = 'Predicted Rentals')
 
 ################################################################################
